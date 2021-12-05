@@ -1,5 +1,5 @@
-function [ T_a ] = fastpEnKF( T,HX,y,R,alpha,pert_stat)
-%% Efficient implementation of the parameter space Ensemble Kalman Filter 
+function [ T_a ] = EnKA( T,Yp,y,R,alpha,pert_stat)
+%% Efficient implementation of the ensemble Kalman analysis step. 
 % with perturbed observations.
 %
 % Dimensions: No = Number of observations to assimilate.
@@ -12,7 +12,7 @@ function [ T_a ] = fastpEnKF( T,HX,y,R,alpha,pert_stat)
 % T     => Np x Ne matrix containing an ensemble of Ne prior
 %       parameter column vectors each with Np entries.
 %        
-% HX   => No x Ne matrix containing an ensemble of Ne predicted
+% Yp   => No x Ne matrix containing an ensemble of Ne predicted
 %         observation column vectors each with No entries.
 % 
 % y     => No x 1 matrix containing the batch of unperturbed observations.
@@ -47,7 +47,7 @@ function [ T_a ] = fastpEnKF( T,HX,y,R,alpha,pert_stat)
 
 %% Scheme:
 %% Change obs perturbation to alpha scaled or not 
-Ne=size(HX,2); No=size(HX,1);
+Ne=size(Yp,2); No=size(Yp,1);
 if numel(R)==1
     R=R.*eye(No);
 elseif numel(R)==No
@@ -66,10 +66,10 @@ perts=sqrt(alpha_pert).*sqrt(R)*randn(No,Ne);
 %A=anomaly(T);             % Np x Ne parameter anomaly matrix.
 A=T-mean(T,2);
 %HEold=anomaly(HX);       	  % No x Ne predicted observation anomaly matrix.
-HE=HX-mean(HX,2);
+HE=Yp-mean(Yp,2);
 %disp(HE-HEold);
 HEt=HE';                  % Ne x No transposed predicted observation anomaly matrix. 
-Inn=Y-(HX+perts);                 % No x Ne innovation matrix. Perturb pred obs, not obs in line with van Leeuwen 2020.
+Inn=Y-(Yp+perts);                 % No x Ne innovation matrix. Perturb pred obs, not obs in line with van Leeuwen 2020.
 
 % Covariance matrices (scaled by the number of ensemble members)
 C_AHE=A*HEt;               % Np x No parameter-predicted observation error covariance matrix. 
@@ -84,16 +84,5 @@ K=C_AHE/(C_HEHE+aC_DD);      % Kalman gain for the parameters.
 T_a=T+K*Inn;                 % Analysis.
 %toc;
 
-%{
-% Legacy code from older matlab version (before broadcasting)
-    function [ anom ] = anomaly( ens )
-        %Anomaly, generates an array of anomalies by elementwise subtracting
-        %the ensemble mean column vector (mean of the second dimension of ens)
-        %from the corresponding rows of ens.
-        
-        anom=bsxfun(@minus, ens, mean(ens,2));
-        
-    end
-%}
 
 end
