@@ -77,14 +77,14 @@ for ell=1:(Na+1)
         R=ysd.^2;
         alpha=Na;
         pert_stat=1;
-        phi=fastpEnKF(phi,Yp,y,R,alpha,pert_stat);
+        phi=EnKA(phi,Yp,y,R,alpha,pert_stat);
         theta=exp(phi);
         a=theta(1:2,:);
         b=theta(3:4,:);
     end
 end
 
-return
+%return
 
 %%
 figure(1); clf;
