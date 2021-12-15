@@ -56,10 +56,15 @@
 % make it possible to define observations per grid point / location
 
 % rename variables:
-% a = ddf
-% b = precip_factor or Pfactor
-% D = snowdepth
-% here = obs_t
+% x a => Dday_factor / Dday_factor_true
+% x b => P_factor / P_factor_true
+% x D => snowdepth
+% x Dobs => snowdepth_obs
+% x Dtrue => snowdepth_true
+% here => obs_times
+% x ysd => y_std
+% x tobs => t_obs
+
 
 %% start code
 
@@ -67,23 +72,27 @@ clearvars;
 
 % set parameters
 
+% Data assimilation parameters
+Ne          = 1e2; % ensemble size 
+Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
+
+% model run 
 % t_start     = '01-Sep-2018'
 % t_end       = '01-Sep-2019'
+% N_gridp     = 2;
 
-% truth run & synthetic observations
-ysd         = 20; % standard deviation of the error term added to the synthetic SWE observations
-atrue       = [6; 6];%6; % mm/d/K
-btrue       = [0.5; 2];
-tobs        = [datenum('01-Jan-2019'); datenum('01-Feb-2019');...
+% parameter definition and truth run settings:
+Dday_factor_true = [6; 6]; % mm/d/K
+P_factor_true    = [0.5; 2];
+
+%  synthetic observations
+y_std         = 20; % standard deviation of the error term added to the synthetic SWE observations
+t_obs        = [datenum('01-Jan-2019'); datenum('01-Feb-2019');...
                 datenum('01-Mar-2019'); datenum('01-Apr-2019');...
                 datenum('01-May-2019'); datenum('01-Jun-2019');...
                 datenum('01-Jul-2019'); datenum('01-Aug-2019')];
-% Data assimilation parameters
-Ne          = 1e2; % ensemble size 
-Na          = 4;   % number of MDA iterations
 
 
-% literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 
 
 
@@ -107,46 +116,47 @@ for j=1:Nt
    T(j,:)=mean(f.T(:,here),2);
    P(j,:)=sum(f.P(:,here),2); 
 end
-
+clear here
 
 %% 1) Synthetic model run creating the 'TRUTH' 
 %D=zeros(size(P));
 % run the degree day model for defined period, climate input, and model
 % parameters
-D = DDM(t,P,T,atrue,btrue);
+snowdepth = DDM(t,P,T,Dday_factor_true,P_factor_true);
 % set result to truth 
-Dtrue=D;
+snowdepth_true=snowdepth;
 
 %% 2) Generate synthetic observations 
 % add observation error to truth
-Dobs=Dtrue+ysd.*randn(size(Dtrue));
-Dobs=max(Dobs,0); % Observed SWE can not be negative
+snowdepth_obs=snowdepth_true+y_std.*randn(size(snowdepth_true));
+snowdepth_obs=max(snowdepth_obs,0); % Observed SWE can not be negative
 
 
 % and select observations by defining the time (=day) of observation
-No=numel(tobs);
+No=numel(t_obs);
 tmp=zeros(No,2);
-here=zeros(Nt,1,'logical');
+obs_times=zeros(Nt,1,'logical');
 for j=1:No
-    herej=t==tobs(j);
-    here=here+herej;
-    tmp(j,:)=Dobs(herej,:);
+    obs_timesj = t==t_obs(j);
+    obs_times = obs_times + obs_timesj;
+    tmp(j,:) = snowdepth_obs(obs_timesj,:);
 end
-here=logical(here);
-Dobs=tmp;
+obs_times=logical(obs_times);
+snowdepth_obs=tmp;
+clear tmp
 
 %{
 figure(1); clf;
-plot(t,D);
+plot(t,snowdepth);
 datetick('x','keepticks','keeplimits');
 hold on;
-scatter(tobs,Dobs,150,'.');
+scatter(t_obs,snowdepth_obs,150,'.');
 %}
 
 
 %% 3) Set a prior distribution on the uncertain parameters
-a=exp(log(5)+1.*randn(2,Ne));
-b=exp(log(1)+1.*randn(2,Ne));
+Dday_factor=exp(log(5)+1.*randn(2,Ne));
+P_factor=exp(log(1)+1.*randn(2,Ne));
 
 
 %% 4) Run the model and assimilate the synthetic observations 
@@ -156,23 +166,23 @@ b=exp(log(1)+1.*randn(2,Ne));
 % result with the final parameter ensembles (Na+1)
 for ell=1:(Na+1)    
     % model run
-    D=DDM(t,P,T,a,b);
+    snowdepth=DDM(t,P,T,Dday_factor,P_factor);
     
     % Data Assimilation
-    theta=[a;b];    % theta combines all parameters that can be updated
+    theta=[Dday_factor;P_factor];    % theta combines all parameters that can be updated
     
     % save ensemble prior and post (ensembles before and after the
     % assimilation(s), the intermediate results in MDA are not saved)
     if ell==1
         thetapri=theta;
-        apri=a(1:2,:);
-        bpri=b(1:2,:);
-        Dpri=D;
+        Dday_factor_pri=Dday_factor(1:2,:);
+        P_factor_pri=P_factor(1:2,:);
+        snowdepth_pri=snowdepth;
     elseif ell==(Na+1)
         thetapost=theta;
-        apost=a(1:2,:);
-        bpost=b(1:2,:);
-        Dpost=D;
+        Dday_factor_post = Dday_factor(1:2,:);
+        P_factor_post=P_factor(1:2,:);
+        snowdepth_post=snowdepth;
     end
     
     % peform data assimilation; except for the Na+1 iteration
@@ -181,14 +191,14 @@ for ell=1:(Na+1)
         % distribution
         phi=log(theta);
         % define the model predicted observations matrix from the model results
-        Yp=D(here,:,:); % time, space, ensemble
+        Yp=snowdepth(obs_times,:,:); % time, space, ensemble
         Yp=reshape(Yp,No*2,Ne);
         % define the observation matrix
-        y=Dobs;
+        y=snowdepth_obs;
         y=y(:);
         % define observation covariance (measure for observation
         % uncertainty
-        R=ysd.^2;
+        R=y_std.^2;
         alpha=Na; % number of MDA iterations
         pert_stat=1; % 1 for MDA, 0 for ES
         % update parameters with the EnKA function
@@ -196,8 +206,8 @@ for ell=1:(Na+1)
         % transform parameters back
         theta=exp(phi);
         % update model parameters
-        a=theta(1:2,:);
-        b=theta(3:4,:);
+        Dday_factor=theta(1:2,:);
+        P_factor=theta(3:4,:);
     end
 end
 
@@ -208,18 +218,18 @@ end
 figure(1); clf;
 for loc=1:2
     subplot(2,2,loc);
-    plot(t,squeeze(Dpri(:,loc,:)),'LineWidth',0.5,'Color',[0.8 0 0 0.1]); hold on;
-    plot(t,squeeze(Dpost(:,loc,:)),'LineWidth',0.5,'Color',[0 0 0.8 0.1]); hold on;
-    pt(1)=plot(t,squeeze(mean(Dpri(:,loc,:),3)),'LineWidth',2,'Color',[0.8 0 0 1]); hold on;
-    pt(2)=plot(t,squeeze(mean(Dpost(:,loc,:),3)),'LineWidth',2,'Color',[0 0 0.8 1]); hold on;
-    Dtl=Dtrue(:,loc);
-    pt(3)=plot(t,Dtl,'-k','LineWidth',2);
-    pt(4)=scatter(tobs,Dobs(:,loc),100,'o','MarkerFaceColor',[0.7 0.7 0],'MarkerEdgeColor',[0 0 0]);
-    %scatter(tobs,Dobs(:,loc),250,'.','MarkerEdgeColor',[0 0 0]);
+    plot(t,squeeze(snowdepth_pri(:,loc,:)),'LineWidth',0.5,'Color',[0.8 0 0 0.1]); hold on;
+    plot(t,squeeze(snowdepth_post(:,loc,:)),'LineWidth',0.5,'Color',[0 0 0.8 0.1]); hold on;
+    pt(1)=plot(t,squeeze(mean(snowdepth_pri(:,loc,:),3)),'LineWidth',2,'Color',[0.8 0 0 1]); hold on;
+    pt(2)=plot(t,squeeze(mean(snowdepth_post(:,loc,:),3)),'LineWidth',2,'Color',[0 0 0.8 1]); hold on;
+    snowdepthtl=snowdepth_true(:,loc);
+    pt(3)=plot(t,snowdepthtl,'-k','LineWidth',2);
+    pt(4)=scatter(t_obs,snowdepth_obs(:,loc),100,'o','MarkerFaceColor',[0.7 0.7 0],'MarkerEdgeColor',[0 0 0]);
+    %scatter(t_obs,snowdepth_obs(:,loc),250,'.','MarkerEdgeColor',[0 0 0]);
     leg=legend(pt(:),{'Prior','Post','Truth','Obs'},'Interpreter','Latex',...
         'FontSize',16,'Location','NorthWest');
     clear pt;
-    yl=5*max(Dtl); 
+    yl=5*max(snowdepthtl); 
     ylim([0 2e3]);
     xlim([min(t) max(t)]);
     datetick('x','keepticks','keeplimits');
@@ -232,14 +242,14 @@ for loc=1:2
     title(sprintf('States in location %d',loc),'Interpreter','Latex','FontSize',16);
     
     subplot(2,2,2+loc);
-    xpri=apri(loc,:); ypri=bpri(loc,:);
+    xpri=Dday_factor_pri(loc,:); ypri=P_factor_pri(loc,:);
     alphis=0.4;
     pt(1)=scatter(xpri,ypri,4e1,'o','MarkerFaceColor',[0.8 0 0],'MarkerFaceAlpha',alphis,...
         'MarkerEdgeColor',[0 0 0]); hold on;
-    xpost=apost(loc,:); ypost=bpost(loc,:);
+    xpost=Dday_factor_post(loc,:); ypost=P_factor_post(loc,:);
     pt(2)=scatter(xpost,ypost,4e1,'s','MarkerFaceColor',[0 0 0.8],'MarkerFaceAlpha',alphis,...
         'MarkerEdgeColor',[0 0 0]); 
-    pt(3)=scatter(atrue(loc),btrue(loc),250,'p','MarkerEdgeColor',[0 0 0],'LineWidth',2,...
+    pt(3)=scatter(Dday_factor_true(loc),P_factor_true(loc),250,'p','MarkerEdgeColor',[0 0 0],'LineWidth',2,...
         'MarkerFaceColor',[1 1 1]);
     leg=legend(pt(:),{'Prior','Post','Truth'},'Interpreter','Latex',...
         'FontSize',16,'Location','NorthEast');

@@ -1,4 +1,4 @@
-function D=DDM(t,P,T,a,b)
+function snowdepth=DDM(t,P,T,Dday_factor,P_factor)
 %% DDM: A simple degree day snowmelt model
 % 
 
@@ -8,27 +8,27 @@ Tmelt=0; % Temperature threshold for snowmelt (degrees C)
 
 Nt=numel(t); % Number of time steps.
 Ns=size(P,2); % Number of points in space (can be just 1).
-Ne=size(a,2); % Number of ensemble members (can be just 1).
-Dold=0; % Initial condition (no snow).
+Ne=size(Dday_factor,2); % Number of ensemble members (can be just 1).
+snowdepth_old=0; % Initial condition (no snow).
 
 % Ensure arrays are compatible
 Pe=repmat(P,1,1,Ne);
 Te=repmat(T,1,1,Ne);
-if Ne==1&&(size(a,1)==Ns) 
+if Ne==1&&(size(Dday_factor,1)==Ns) 
     % In this case (deterministic run=single ensemble member) 
     % Pj and Tj will be 1 x Ns, so ensure a, b are 1 x Ns for
     % compatibility in the elementwise products for the Ablation and 
     % Accumulation terms.
-    a=a'; 
-    b=b';
+    Dday_factor=Dday_factor'; 
+    P_factor=P_factor';
 elseif Ne>1&&Ns>1 
     % In this case Pj and Tj will be 1 x Ns x Ne
     % Make a , b size 1 x Ns x Ne
     tmp=zeros(1,Ns,Ne);
-    tmp(1,:,:)=a;
-    a=tmp;
-    tmp(1,:,:)=b;
-    b=tmp;
+    tmp(1,:,:)=Dday_factor;
+    Dday_factor=tmp;
+    tmp(1,:,:)=P_factor;
+    P_factor=tmp;
 end
 %{
 if Ns>1&&Ne>1 % If many points in space and ensemble.
@@ -42,7 +42,7 @@ elseif Ne==1 % If deterministic (single realizations).
     Te=T;
 end
 %}
-D=zeros(size(Pe));
+snowdepth=zeros(size(Pe));
 
 for j=1:Nt
     %Pj=squeeze(Pe(j,:,:)); % Precip for this time step
@@ -50,7 +50,7 @@ for j=1:Nt
     Pj=Pe(j,:,:);
     Tj=Te(j,:,:);
     cansnow=Tj<=Tsnow; % Snow is possible.
-    bj=b;
+    bj=P_factor;
     bj(~cansnow)=0;
     try
         Accumulation=bj.*Pj;
@@ -59,13 +59,13 @@ for j=1:Nt
     end
     dd=Tj-Tmelt; % Degree day for this day.
     melting=dd>0;
-    aj=a;
+    aj=Dday_factor;
     aj(~melting)=0;
     Ablation=aj.*dd;
-    Dnew=Dold+Accumulation-Ablation;
-    Dnew=max(Dnew,0);
-    D(j,:,:)=Dnew; 
-    Dold=Dnew;
+    snowdepth_new=snowdepth_old+Accumulation-Ablation;
+    snowdepth_new=max(snowdepth_new,0);
+    snowdepth(j,:,:)=snowdepth_new; 
+    snowdepth_old=snowdepth_new;
 end
 
 
