@@ -16,14 +16,14 @@ Pe=repmat(P,1,1,Ne);
 Te=repmat(T,1,1,Ne);
 if Ne==1&&(size(Dday_factor,1)==Ns) 
     % In this case (deterministic run=single ensemble member) 
-    % Pj and Tj will be 1 x Ns, so ensure a, b are 1 x Ns for
+    % Pj and Tj will be 1 x Ns, so ensure Dday_factor, P_factor are 1 x Ns for
     % compatibility in the elementwise products for the Ablation and 
     % Accumulation terms.
     Dday_factor=Dday_factor'; 
     P_factor=P_factor';
 elseif Ne>1&&Ns>1 
     % In this case Pj and Tj will be 1 x Ns x Ne
-    % Make a , b size 1 x Ns x Ne
+    % Make Dday_factor , P_factor size 1 x Ns x Ne
     tmp=zeros(1,Ns,Ne);
     tmp(1,:,:)=Dday_factor;
     Dday_factor=tmp;
@@ -50,18 +50,18 @@ for j=1:Nt
     Pj=Pe(j,:,:);
     Tj=Te(j,:,:);
     cansnow=Tj<=Tsnow; % Snow is possible.
-    bj=P_factor;
-    bj(~cansnow)=0;
+    P_factor_j=P_factor;
+    P_factor_j(~cansnow)=0;
     try
-        Accumulation=bj.*Pj;
+        Accumulation=P_factor_j.*Pj;
     catch
         disp('hi!');
     end
     dd=Tj-Tmelt; % Degree day for this day.
     melting=dd>0;
-    aj=Dday_factor;
-    aj(~melting)=0;
-    Ablation=aj.*dd;
+    Dday_factor_j=Dday_factor;
+    Dday_factor_j(~melting)=0;
+    Ablation=Dday_factor_j.*dd;
     snowdepth_new=snowdepth_old+Accumulation-Ablation;
     snowdepth_new=max(snowdepth_new,0);
     snowdepth(j,:,:)=snowdepth_new; 
