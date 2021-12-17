@@ -132,20 +132,22 @@ for j=1:Nt
    T(j,:)=mean(f.T(:,here),2);
    P(j,:)=sum(f.P(:,here),2); 
 end
-clear here
+clear here % clear temporary variable
 
 %% 1) Synthetic model run creating the 'TRUTH' 
-%D=zeros(size(P));
-% run the degree day model for defined period, climate input, and model
-% parameters
+
+% define the input model parameters to have [N_gridp,1] even if the degree
+% day parameter is the same for all grid points.
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor_DDMinput = Dday_factor_true * ones(N_gridp, 1);
 else
     Dday_factor_DDMinput = Dday_factor_true;
 end
+
+% run the degree day model for defined period, climate input, and true model
+% parameters and set the result as the truth
 snowdepth_true = DDM(t,P,T,Dday_factor_DDMinput,P_factor_true);
-% set result to truth 
-% snowdepth_true=snowdepth;
+
 
 %% 2) Generate synthetic observations 
 % add observation error to truth
@@ -164,7 +166,7 @@ for j=1:No
 end
 obs_times=logical(obs_times);
 snowdepth_obs=tmp;
-clear tmp
+clear tmp % clear temporary variable
 
 %{
 figure(1); clf;
