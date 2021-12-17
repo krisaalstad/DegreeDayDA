@@ -77,13 +77,31 @@ Ne          = 1e2; % ensemble size
 Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
-% t_start     = '01-Sep-2018'
-% t_end       = '01-Sep-2019'
-% N_gridp     = 2;
+t_start     = '01-Sep-2018';
+t_end       = '01-Sep-2019';
+N_gridp     = 2;
 
 % parameter definition and truth run settings:
-Dday_factor_true = [6; 6]; % mm/d/K
-P_factor_true    = [0.5; 2];
+% a 'local' parameter can have a different value for each grid cell;
+% a 'global' parameter has one singular value for all grid cells.
+% (option to set P_factor to 'global' not implented yet)
+Dday_factor_type    = 'global';
+
+% set truth values 
+% literature value for the ddf for snow 2.5 to 11.6 mm/d/K
+% P_factor value must be positive
+ddf_lit_values      = [6; 10]; % mm/d/K, if 
+P_lit_values        = [0.5; 2];
+
+if strcmp(Dday_factor_type, 'global') == 1
+    Dday_factor_true = ddf_lit_values(1);
+elseif strcmp(Dday_factor_type, 'local') == 1
+    Dday_factor_true = ddf_lit_values(:);    
+else
+    disp('error: Dday_factor_type not set to ''local'' or ''global''');
+end
+P_factor_true = P_lit_values(:);
+
 
 %  synthetic observations
 y_std         = 20; % standard deviation of the error term added to the synthetic SWE observations
@@ -91,8 +109,6 @@ t_obs        = [datenum('01-Jan-2019'); datenum('01-Feb-2019');...
                 datenum('01-Mar-2019'); datenum('01-Apr-2019');...
                 datenum('01-May-2019'); datenum('01-Jun-2019');...
                 datenum('01-Jul-2019'); datenum('01-Aug-2019')];
-
-
 
 
 
@@ -105,7 +121,7 @@ f.T=double(f.T).*f.T_sf; % unpack temperature data
 
 
 % select model period and define model time t
-t=datenum('01-Sep-2018'):1:datenum('01-Sep-2019'); t=t';
+t=datenum(t_start):1:datenum(t_end); t=t';
 
 % translate hourly values into daily values
 Nt=numel(t);
@@ -122,9 +138,14 @@ clear here
 %D=zeros(size(P));
 % run the degree day model for defined period, climate input, and model
 % parameters
-snowdepth = DDM(t,P,T,Dday_factor_true,P_factor_true);
+if strcmp(Dday_factor_type, 'global') == 1
+    Dday_factor_DDMinput = Dday_factor_true * ones(N_gridp, 1);
+else
+    Dday_factor_DDMinput = Dday_factor_true;
+end
+snowdepth_true = DDM(t,P,T,Dday_factor_DDMinput,P_factor_true);
 % set result to truth 
-snowdepth_true=snowdepth;
+% snowdepth_true=snowdepth;
 
 %% 2) Generate synthetic observations 
 % add observation error to truth
@@ -155,8 +176,19 @@ scatter(t_obs,snowdepth_obs,150,'.');
 
 
 %% 3) Set a prior distribution on the uncertain parameters
-Dday_factor=exp(log(5)+1.*randn(2,Ne));
+% Dday_factor=exp(log(5)+1.*randn(2,Ne));
 P_factor=exp(log(1)+1.*randn(2,Ne));
+
+if strcmp(Dday_factor_type, 'global') == 1
+    Dday_factor=exp(log(5)+1.*randn(1,Ne));
+    Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
+elseif strcmp(Dday_factor_type, 'local') == 1
+    Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
+    Dday_factor_DDMinput = Dday_factor;
+else
+    disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
+end
+
 
 
 %% 4) Run the model and assimilate the synthetic observations 
@@ -166,7 +198,7 @@ P_factor=exp(log(1)+1.*randn(2,Ne));
 % result with the final parameter ensembles (Na+1)
 for ell=1:(Na+1)    
     % model run
-    snowdepth=DDM(t,P,T,Dday_factor,P_factor);
+    snowdepth=DDM(t,P,T,Dday_factor_DDMinput,P_factor);
     
     % Data Assimilation
     theta=[Dday_factor;P_factor];    % theta combines all parameters that can be updated
@@ -174,14 +206,22 @@ for ell=1:(Na+1)
     % save ensemble prior and post (ensembles before and after the
     % assimilation(s), the intermediate results in MDA are not saved)
     if ell==1
-        thetapri=theta;
-        Dday_factor_pri=Dday_factor(1:2,:);
-        P_factor_pri=P_factor(1:2,:);
+        thetapri = theta;
+        if strcmp(Dday_factor_type, 'global') == 1
+            Dday_factor_pri = Dday_factor(1,:);
+        elseif strcmp(Dday_factor_type, 'local') == 1
+            Dday_factor_pri=Dday_factor(1:N_gridp,:);
+        end
+        P_factor_pri=P_factor(1:N_gridp,:);
         snowdepth_pri=snowdepth;
     elseif ell==(Na+1)
         thetapost=theta;
-        Dday_factor_post = Dday_factor(1:2,:);
-        P_factor_post=P_factor(1:2,:);
+        if strcmp(Dday_factor_type, 'global') == 1
+            Dday_factor_post = Dday_factor(1,:);
+        elseif strcmp(Dday_factor_type, 'local') == 1
+            Dday_factor_post = Dday_factor(1:N_gridp,:);
+        end
+        P_factor_post=P_factor(1:N_gridp,:);
         snowdepth_post=snowdepth;
     end
     
@@ -206,8 +246,15 @@ for ell=1:(Na+1)
         % transform parameters back
         theta=exp(phi);
         % update model parameters
-        Dday_factor=theta(1:2,:);
-        P_factor=theta(3:4,:);
+        if strcmp(Dday_factor_type, 'global') == 1
+            Dday_factor =theta(1,:);
+            Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);     
+            P_factor    =theta(2:N_gridp+1,:);
+        elseif strcmp(Dday_factor_type, 'local') == 1
+            Dday_factor =theta(        1:N_gridp,  :);
+            Dday_factor_DDMinput = Dday_factor;
+            P_factor    =theta(N_gridp+1:2*N_gridp,:);
+        end
     end
 end
 
@@ -242,14 +289,21 @@ for loc=1:2
     title(sprintf('States in location %d',loc),'Interpreter','Latex','FontSize',16);
     
     subplot(2,2,2+loc);
-    xpri=Dday_factor_pri(loc,:); ypri=P_factor_pri(loc,:);
+    if strcmp(Dday_factor_type, 'global') == 1
+        xpri=Dday_factor_pri(1,:); ypri=P_factor_pri(loc,:);
+        xpost=Dday_factor_post(1,:); ypost=P_factor_post(loc,:);
+        xtrue = Dday_factor_true * size(N_gridp); ytrue = P_factor_true;
+    else
+        xpri=Dday_factor_pri(loc,:); ypri=P_factor_pri(loc,:);
+        xpost=Dday_factor_post(loc,:); ypost=P_factor_post(loc,:);
+        xtrue = Dday_factor_true; ytrue = P_factor_true;
+    end
     alphis=0.4;
     pt(1)=scatter(xpri,ypri,4e1,'o','MarkerFaceColor',[0.8 0 0],'MarkerFaceAlpha',alphis,...
         'MarkerEdgeColor',[0 0 0]); hold on;
-    xpost=Dday_factor_post(loc,:); ypost=P_factor_post(loc,:);
     pt(2)=scatter(xpost,ypost,4e1,'s','MarkerFaceColor',[0 0 0.8],'MarkerFaceAlpha',alphis,...
         'MarkerEdgeColor',[0 0 0]); 
-    pt(3)=scatter(Dday_factor_true(loc),P_factor_true(loc),250,'p','MarkerEdgeColor',[0 0 0],'LineWidth',2,...
+    pt(3)=scatter(xtrue(loc),ytrue(loc),250,'p','MarkerEdgeColor',[0 0 0],'LineWidth',2,...
         'MarkerFaceColor',[1 1 1]);
     leg=legend(pt(:),{'Prior','Post','Truth'},'Interpreter','Latex',...
         'FontSize',16,'Location','NorthEast');
