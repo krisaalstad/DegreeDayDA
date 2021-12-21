@@ -51,9 +51,10 @@
 % THINGS TO DO TO IMPROVE CODE
 % make it possible to define global parameter, a model parameter that is
 % the same for the entire model domaine, and local parameter, a model
-% parameter that can vary from grid point to grid point
+% parameter that can vary from grid point to grid point -- DONE
 
-% make it possible to define observations per grid point / location
+% make it possible to define observations per grid point / location  --
+% DONE
 
 % rename variables:
 % x a => Dday_factor / Dday_factor_true
@@ -64,7 +65,9 @@
 % here => obs_times
 % x ysd => y_std
 % x tobs => t_obs
+% --DONE
 
+% make more than 2 grid points possible
 
 %% start code
 
@@ -73,7 +76,7 @@ clearvars;
 % set parameters
 
 % Data assimilation parameters
-Ne          = 1e2; % ensemble size 
+Ne          = 100; % ensemble size 
 Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
@@ -85,13 +88,13 @@ N_gridp     = 2;
 % a 'local' parameter can have a different value for each grid cell;
 % a 'global' parameter has one singular value for all grid cells.
 % (option to set P_factor to 'global' not implented yet)
-Dday_factor_type    = 'global';
+Dday_factor_type    = 'local';
 
 % set truth values 
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 % P_factor value must be positive
-ddf_lit_values      = [6; 10]; % mm/d/K, if 
-P_lit_values        = [0.5; 2];
+ddf_lit_values      = [6; 10]; % mm/d/K, if snowdepth_obs
+P_lit_values        = [1; 1.5];
 
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor_true = ddf_lit_values(1);
@@ -105,11 +108,18 @@ P_factor_true = P_lit_values(:);
 
 %  synthetic observations
 y_std         = 20; % standard deviation of the error term added to the synthetic SWE observations
-t_obs        = [datenum('01-Jan-2019'); datenum('01-Feb-2019');...
-                datenum('01-Mar-2019'); datenum('01-Apr-2019');...
-                datenum('01-May-2019'); datenum('01-Jun-2019');...
-                datenum('01-Jul-2019'); datenum('01-Aug-2019')];
 
+% define the time of the observations for each grid point.
+% fill up entries in t_obs with small numbers <= Nmaxobs
+Nmaxobs     = 8;
+t_obs       = zeros(Nmaxobs, N_gridp); 
+t_obs       = [ datenum('01-Jan-2019'), datenum('01-Feb-2019'),... % obs time first grid point
+                datenum('01-Mar-2019'), datenum('01-Apr-2019'),...
+                datenum('01-May-2019'), datenum('01-Jun-2019'),...
+                datenum('01-Jul-2019'), datenum('01-Aug-2019');... 
+                ...
+                datenum('01-Apr-2019'), datenum('01-Jun-2019'),... % obs time second grid point
+                3:Nmaxobs]';                
 
 
 %% load climatic forcing
@@ -150,37 +160,39 @@ snowdepth_true = DDM(t,P,T,Dday_factor_DDMinput,P_factor_true);
 
 
 %% 2) Generate synthetic observations 
+
 % add observation error to truth
-snowdepth_obs=snowdepth_true+y_std.*randn(size(snowdepth_true));
-snowdepth_obs=max(snowdepth_obs,0); % Observed SWE can not be negative
+snowdepth_addederror=snowdepth_true+y_std.*randn(size(snowdepth_true));
+snowdepth_addederror=max(snowdepth_addederror,0); % Observed SWE can not be negative
 
-
-% and select observations by defining the time (=day) of observation
-No=numel(t_obs);
-tmp=zeros(No,2);
-obs_times=zeros(Nt,1,'logical');
-for j=1:No
-    obs_timesj = t==t_obs(j);
-    obs_times = obs_times + obs_timesj;
-    tmp(j,:) = snowdepth_obs(obs_timesj,:);
+% and select observations by finding the model time (=day) of the
+% observations
+No              = zeros(N_gridp,1);                   % number of observations per grid point
+obs_times       = zeros(Nt, N_gridp, 'logical');    % [Nt,Ngridp] array to select the model snow depth value from the true run
+obs_times_ens   = zeros(Nt, N_gridp, Ne, 'logical');% [Nt,Ngridp, Ne] array to select the model snow depth values from the ensemble run
+snowdepth_obs   = nan(Nmaxobs, N_gridp);            % [Nmaxobs, Ngridp] array containing the observations for every grid point as derived from the true run
+for ii = 1:N_gridp
+    No(ii) = sum(t_obs(:,ii)> Nmaxobs);
+    obs_times(:,ii) = ismember(t, t_obs(1:No(ii), ii) ); % select the model time steps with an observation for grid point ii
+    obs_times_ens(obs_times(:,ii),ii,:) = 1; % set observation time for all ensemble members of this grid point ii 
+    snowdepth_obs(1:No(ii),ii) = snowdepth_addederror(obs_times(:,ii), ii); % select the snow depth observation at the observation time from the true run with added observation error
 end
-obs_times=logical(obs_times);
-snowdepth_obs=tmp;
-clear tmp % clear temporary variable
+No_tot = sum(No,1);       % total number of available observations summed over all grid points
 
-%{
-figure(1); clf;
-plot(t,snowdepth);
-datetick('x','keepticks','keeplimits');
-hold on;
-scatter(t_obs,snowdepth_obs,150,'.');
-%}
+
+% % control figure to see synthetic observations:
+% figure(1); clf;
+% plot(t,snowdepth_addederror);
+% datetick('x','keepticks','keeplimits');
+% hold on;
+% plot(t,snowdepth_true, '--');
+% scatter(t_obs(t_obs>Nmaxobs),snowdepth_obs(~isnan(snowdepth_obs)),550,'.');
+
 
 
 %% 3) Set a prior distribution on the uncertain parameters
-% Dday_factor=exp(log(5)+1.*randn(2,Ne));
-P_factor=exp(log(1)+1.*randn(2,Ne));
 
+% degree day factor, global or local
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor=exp(log(5)+1.*randn(1,Ne));
     Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
@@ -190,6 +202,8 @@ elseif strcmp(Dday_factor_type, 'local') == 1
 else
     disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
 end
+% precipitation factor
+P_factor=exp(log(1)+1.*randn(2,Ne));
 
 
 
@@ -233,13 +247,18 @@ for ell=1:(Na+1)
         % distribution
         phi=log(theta);
         % define the model predicted observations matrix from the model results
-        Yp=snowdepth(obs_times,:,:); % time, space, ensemble
-        Yp=reshape(Yp,No*2,Ne);
+        Yp = zeros(No_tot, Ne);
+        tmp2 = snowdepth(obs_times_ens); % time, space, ensemble; tmp lists all model predicted observations for all ensemble members in a [No_tot * Ne,1] array
+        jj1 = 1;
+        for ii=1:Ne
+            jj2 = jj1+No_tot-1;
+            Yp(:,ii) = tmp2(jj1:jj2);  % [Nobs x Ne] observation matrix with on each row the ensemble prediction for each observation
+            jj1 = jj2+1;
+        end
         % define the observation matrix
-        y=snowdepth_obs;
-        y=y(:);
+        y=snowdepth_obs(~isnan(snowdepth_obs)); % creates a [Nobs, 1] list of all observation with first all obs for gridp 1, followed by all obs for gridp 2, etc til gridp N_gridp
         % define observation covariance (measure for observation
-        % uncertainty
+        % uncertainty)
         R=y_std.^2;
         alpha=Na; % number of MDA iterations
         pert_stat=1; % 1 for MDA, 0 for ES
@@ -265,15 +284,15 @@ end
 %% 5) Perform some validation
 
 figure(1); clf;
-for loc=1:2
-    subplot(2,2,loc);
+for loc=1:N_gridp
+    subplot(2,N_gridp,loc);
     plot(t,squeeze(snowdepth_pri(:,loc,:)),'LineWidth',0.5,'Color',[0.8 0 0 0.1]); hold on;
     plot(t,squeeze(snowdepth_post(:,loc,:)),'LineWidth',0.5,'Color',[0 0 0.8 0.1]); hold on;
     pt(1)=plot(t,squeeze(mean(snowdepth_pri(:,loc,:),3)),'LineWidth',2,'Color',[0.8 0 0 1]); hold on;
     pt(2)=plot(t,squeeze(mean(snowdepth_post(:,loc,:),3)),'LineWidth',2,'Color',[0 0 0.8 1]); hold on;
     snowdepthtl=snowdepth_true(:,loc);
     pt(3)=plot(t,snowdepthtl,'-k','LineWidth',2);
-    pt(4)=scatter(t_obs,snowdepth_obs(:,loc),100,'o','MarkerFaceColor',[0.7 0.7 0],'MarkerEdgeColor',[0 0 0]);
+    pt(4)=scatter(t_obs(:,loc),snowdepth_obs(:,loc),100,'o','MarkerFaceColor',[0.7 0.7 0],'MarkerEdgeColor',[0 0 0]);
     %scatter(t_obs,snowdepth_obs(:,loc),250,'.','MarkerEdgeColor',[0 0 0]);
     leg=legend(pt(:),{'Prior','Post','Truth','Obs'},'Interpreter','Latex',...
         'FontSize',16,'Location','NorthWest');
@@ -290,7 +309,7 @@ for loc=1:2
     set(gca,'TickLabelInterpreter','latex'); 
     title(sprintf('States in location %d',loc),'Interpreter','Latex','FontSize',16);
     
-    subplot(2,2,2+loc);
+    subplot(2,N_gridp,N_gridp+loc);
     if strcmp(Dday_factor_type, 'global') == 1
         xpri=Dday_factor_pri(1,:); ypri=P_factor_pri(loc,:);
         xpost=Dday_factor_post(1,:); ypost=P_factor_post(loc,:);
