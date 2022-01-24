@@ -62,7 +62,7 @@
 % x D => snowdepth
 % x Dobs => snowdepth_obs
 % x Dtrue => snowdepth_true
-% here => obs_times
+% x here => obs_times
 % x ysd => y_std
 % x tobs => t_obs
 % --DONE
@@ -82,7 +82,7 @@ Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 % model run 
 t_start     = '01-Sep-2018';
 t_end       = '01-Sep-2019';
-N_gridp     = 2;
+N_gridp     = 4;
 
 % parameter definition and truth run settings:
 % a 'local' parameter can have a different value for each grid cell;
@@ -93,17 +93,18 @@ Dday_factor_type    = 'local';
 % set truth values 
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 % P_factor value must be positive
-ddf_lit_values      = [6; 10]; % mm/d/K, if snowdepth_obs
-P_lit_values        = [1; 1.5];
-
+ddf_lit_values      = [6; 10; 8; 9; 7]; % mm/d/K, if snowdepth_obs
+P_lit_values        = [1; 1.75; 1.25; 0.75; 1.5];
+    % degree day factor
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor_true = ddf_lit_values(1);
 elseif strcmp(Dday_factor_type, 'local') == 1
-    Dday_factor_true = ddf_lit_values(:);    
+    Dday_factor_true = ddf_lit_values(1:N_gridp);    
 else
     disp('error: Dday_factor_type not set to ''local'' or ''global''');
 end
-P_factor_true = P_lit_values(:);
+    % precipitation factor
+P_factor_true = P_lit_values(1:N_gridp);
 
 
 %  synthetic observations
@@ -111,17 +112,44 @@ y_std         = 20; % standard deviation of the error term added to the syntheti
 
 % define the time of the observations for each grid point.
 % fill up entries in t_obs with small numbers <= Nmaxobs
-Nmaxobs     = 8;
+Nmaxobs     = 11;
 t_obs       = zeros(Nmaxobs, N_gridp); 
-t_obs       = [ datenum('01-Jan-2019'), datenum('01-Feb-2019'),... % obs time first grid point
-                datenum('01-Mar-2019'), datenum('01-Apr-2019'),...
-                datenum('01-May-2019'), datenum('01-Jun-2019'),...
-                datenum('01-Jul-2019'), datenum('01-Aug-2019');... 
-                ...
-                datenum('01-Apr-2019'), datenum('01-Jun-2019'),... % obs time second grid point
-                3:Nmaxobs]';                
-
-
+t_obs(:,1)  = [ datenum('01-Jan-2019'),... % obs time first grid point
+                datenum('01-Feb-2019'),...
+                datenum('01-Mar-2019'),...
+                datenum('15-Mar-2019'),...
+                datenum('01-Apr-2019'),...
+                datenum('15-Apr-2019'),...
+                datenum('01-May-2019'),...
+                datenum('15-May-2019'),...
+                datenum('01-Jun-2019'),...
+                datenum('01-Jul-2019'),...
+                datenum('01-Aug-2019'),...
+                ]; 
+t_obs(:,2)  = [ datenum('01-Jan-2019'),... % obs time second grid point
+                datenum('15-Mar-2019'),...
+                datenum('01-May-2019'),...
+                datenum('01-Jun-2019'),...
+                5:Nmaxobs...
+                ];                
+t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
+                2:Nmaxobs...
+                ]; 
+            
+% example dates, can be copied in above:
+%                 datenum('01-Jan-2019'),... % obs time second grid point
+%                 datenum('01-Feb-2019'),...
+%                 datenum('01-Mar-2019'),...
+%                 datenum('15-Mar-2019'),...
+%                 datenum('01-Apr-2019'),...
+%                 datenum('15-Apr-2019'),...
+%                 datenum('01-May-2019'),...
+%                 datenum('15-May-2019'),...
+%                 datenum('01-Jun-2019'),...
+%                 datenum('15-Jun-2019'),...
+%                 datenum('01-Jul-2019'),...
+%                 datenum('01-Aug-2019'),...
+            
 %% load climatic forcing
 
 % load real-data forcing
@@ -143,6 +171,19 @@ for j=1:Nt
    P(j,:)=sum(f.P(:,here),2); 
 end
 clear here % clear temporary variable
+
+% expand, or decrease, the climatic forcing to the number of defined grid
+% points. At present the forcing is defined for 2 grid points
+if N_gridp~=2
+    if N_gridp == 1
+        T = T(:,1);
+        P = P(:,1);
+    elseif N_gridp > 2
+        T(:,3:N_gridp) = repmat(T(:,1),1,N_gridp-2);
+        P(:,3:N_gridp) = repmat(P(:,1),1,N_gridp-2);
+    end
+end
+        
 
 %% 1) Synthetic model run creating the 'TRUTH' 
 
@@ -203,7 +244,7 @@ else
     disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
 end
 % precipitation factor
-P_factor=exp(log(1)+1.*randn(2,Ne));
+P_factor=exp(log(1)+ 1.*randn(N_gridp,Ne));
 
 
 
@@ -313,7 +354,7 @@ for loc=1:N_gridp
     if strcmp(Dday_factor_type, 'global') == 1
         xpri=Dday_factor_pri(1,:); ypri=P_factor_pri(loc,:);
         xpost=Dday_factor_post(1,:); ypost=P_factor_post(loc,:);
-        xtrue = Dday_factor_true * size(N_gridp); ytrue = P_factor_true;
+        xtrue = Dday_factor_true * ones(N_gridp,1); ytrue = P_factor_true;
     else
         xpri=Dday_factor_pri(loc,:); ypri=P_factor_pri(loc,:);
         xpost=Dday_factor_post(loc,:); ypost=P_factor_post(loc,:);

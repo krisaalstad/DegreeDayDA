@@ -55,7 +55,7 @@ for j=1:Nt
     try
         Accumulation=P_factor_j.*Pj;
     catch
-        disp('hi!');
+        disp('hi! error in accumulation calculation');
     end
     dd=Tj-Tmelt; % Degree day for this day.
     melting=dd>0;
