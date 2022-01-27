@@ -88,7 +88,7 @@ N_gridp     = 4;
 % a 'local' parameter can have a different value for each grid cell;
 % a 'global' parameter has one singular value for all grid cells.
 % (option to set P_factor to 'global' not implented yet)
-Dday_factor_type    = 'local';
+Dday_factor_type    = 'global';
 
 % set truth values 
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
@@ -126,11 +126,9 @@ t_obs(:,1)  = [ datenum('01-Jan-2019'),... % obs time first grid point
                 datenum('01-Jul-2019'),...
                 datenum('01-Aug-2019'),...
                 ]; 
-t_obs(:,2)  = [ datenum('01-Jan-2019'),... % obs time second grid point
-                datenum('15-Mar-2019'),...
-                datenum('01-May-2019'),...
-                datenum('01-Jun-2019'),...
-                5:Nmaxobs...
+t_obs(:,2)  = [ datenum('15-Mar-2019'),... % obs time second grid point
+                datenum('15-May-2019'),...
+                3:Nmaxobs...
                 ];                
 t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
                 2:Nmaxobs...
@@ -235,16 +233,25 @@ No_tot = sum(No,1);       % total number of available observations summed over a
 
 % degree day factor, global or local
 if strcmp(Dday_factor_type, 'global') == 1
-    Dday_factor=exp(log(5)+1.*randn(1,Ne));
-    Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
+    % option A: prior distribution uncorrelated between grid points
+    Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
+    Dday_factor_DDMinput = Dday_factor;
+    % option B: correlation between grid points as prior distributions have the same deviations    
+%     Dday_factor=exp(log(5)+1.*randn(1,Ne));
+%     Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
 elseif strcmp(Dday_factor_type, 'local') == 1
     Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
     Dday_factor_DDMinput = Dday_factor;
 else
     disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
 end
+
 % precipitation factor
-P_factor=exp(log(1)+ 1.*randn(N_gridp,Ne));
+    % option A: prior distribution uncorrelated between grid points     
+P_factor = exp(log(1)+ 1.* randn(N_gridp,Ne));   
+    % optionB: correlation between grid points as prior distributions have the same deviations     
+% Pprior_spread = exp(log(1)+ 1.* randn(1,Ne));  
+% P_factor=repmat(Pprior_spread, [N_gridp,1]);
 
 
 
@@ -382,5 +389,27 @@ for loc=1:N_gridp
     axis square;
     title(sprintf('Parameters in location %d',loc),'Interpreter','Latex','FontSize',16);
 end
-
+% save figure
 % print('-djpeg','results','-r300','-opengl');
+
+
+%% plot histogram P_factor prior and posterior last grid point
+bar_matrix = [ypri; ypost]';
+f2 = figure(2);
+clf
+H = hist(bar_matrix,[0.25:0.25:5]);
+hist(bar_matrix,[0.25:0.25:5]);
+hold on;
+plot([ytrue(end), ytrue(end)], [0,max(max(H))], 'linewidth', 3, 'color', [0,0,0])
+xlim(gca,[0,5]);
+l1 = legend('prior', 'posterior', 'truth');
+title('P factor distribution last grid point')
+
+
+
+
+
+
+
+
+
