@@ -9,6 +9,10 @@ function rho=GC(d,c)
 % d : Absolute separation distance between points (grid cells or time steps).
 % c : Localization constant (decay length-scale, at 2*c rho is 0).
 %
+% Output:
+% rho : Correlation for distances in d for localization constant cfollowing
+% the Gaspari-Cohn function
+%
 % References:
 % Gaspari and Cohn (199): QJRMS, https://doi.org/10.1002/qj.49712555417
 % Roh et al. (2015): NPG, https://doi.org/10.5194/npg-22-723-2015
@@ -33,7 +37,10 @@ rho=GC(d,c);
 imagesc(x,y,rho); axis xy;
 c=colorbar;
 %}
-% Main code:
+%
+% For a more complex example that also uses the Cholesky-based Gaussian
+% Sampler (CGS) function for a large 2-D grid, see dancing_blobs.m.
+%% Main code:
 
 % Pre-allocation
 rho=zeros(size(d));
