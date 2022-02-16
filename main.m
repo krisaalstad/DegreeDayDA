@@ -76,7 +76,7 @@ clearvars;
 % set parameters
 
 % Data assimilation parameters
-Ne          = 1000; % ensemble size 
+Ne          = 5000; % ensemble size 
 Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
@@ -94,7 +94,7 @@ Dday_factor_type    = 'global';
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 % P_factor value must be positive
 ddf_lit_values      = [6; 10; 8; 9; 7]; % mm/d/K, if snowdepth_obs
-P_lit_values        = [1; 1.75; 1.25; 0.75; 1.5];
+P_lit_values        = [1; 1.75; 1.25; 1; 1.5];
     % degree day factor
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor_true = ddf_lit_values(1);
@@ -231,6 +231,17 @@ No_tot = sum(No,1);       % total number of available observations summed over a
 
 %% 3) Set a prior distribution on the uncertain parameters
 
+x=(1:N_gridp)';%% spatial coordinate (dummy units). Column vectors
+d=sqrt((repmat(x,1,N_gridp)-repmat(x',N_gridp,1)).^2);
+c=0.5; 
+rho=GC(d,c);
+sig=ones(N_gridp,1);  % standard dev
+
+
+
+
+
+
 % degree day factor, global or local
 if strcmp(Dday_factor_type, 'global') == 1
     % option A: prior distribution uncorrelated between grid points
@@ -240,8 +251,13 @@ if strcmp(Dday_factor_type, 'global') == 1
 %     Dday_factor=exp(log(5)+1.*randn(1,Ne));
 %     Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
 elseif strcmp(Dday_factor_type, 'local') == 1
+    % No spatial correlation
     Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
     Dday_factor_DDMinput = Dday_factor;
+%     % Possible spatial correlation (change c=cut off distance)
+%     Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
+%     Dday_factor_DDMinput = Dday_factor;
+    
 else
     disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
 end
@@ -249,9 +265,8 @@ end
 % precipitation factor
     % option A: prior distribution uncorrelated between grid points     
 P_factor = exp(log(1)+ 1.* randn(N_gridp,Ne));   
-%     % optionB: correlation between grid points as prior distributions have the same deviations     
-% Pprior_spread = exp(log(1)+ 1.* randn(1,Ne));  
-% P_factor=repmat(Pprior_spread, [N_gridp,1]);
+%     % optionB: spatial correlation between grid points using the CGS function
+% P_factor=exp(CGS(rho,log(1).*ones(N_gridp,1),sig,Ne));
 
 
 
