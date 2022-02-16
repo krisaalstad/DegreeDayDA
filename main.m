@@ -76,7 +76,7 @@ clearvars;
 % set parameters
 
 % Data assimilation parameters
-Ne          = 100; % ensemble size 
+Ne          = 1000; % ensemble size 
 Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
@@ -236,7 +236,7 @@ if strcmp(Dday_factor_type, 'global') == 1
     % option A: prior distribution uncorrelated between grid points
     Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
     Dday_factor_DDMinput = Dday_factor;
-    % option B: correlation between grid points as prior distributions have the same deviations    
+%     % option B: correlation between grid points as prior distributions have the same deviations    
 %     Dday_factor=exp(log(5)+1.*randn(1,Ne));
 %     Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
 elseif strcmp(Dday_factor_type, 'local') == 1
@@ -249,7 +249,7 @@ end
 % precipitation factor
     % option A: prior distribution uncorrelated between grid points     
 P_factor = exp(log(1)+ 1.* randn(N_gridp,Ne));   
-    % optionB: correlation between grid points as prior distributions have the same deviations     
+%     % optionB: correlation between grid points as prior distributions have the same deviations     
 % Pprior_spread = exp(log(1)+ 1.* randn(1,Ne));  
 % P_factor=repmat(Pprior_spread, [N_gridp,1]);
 
