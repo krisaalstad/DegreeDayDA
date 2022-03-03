@@ -76,24 +76,31 @@ clearvars;
 % set parameters
 
 % Data assimilation parameters
-Ne          = 5000; % ensemble size 
+Ne          = 100; % ensemble size 
 Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
 t_start     = '01-Sep-2018';
 t_end       = '01-Sep-2019';
-N_gridp     = 4;
+N_gridp     = 4; % min 2, max 5 grid points, add literature values to ddf and P_factor in case more than 5 points are wanted
+
+% set ES_MDA options
+corr_prior_distr    = 0;    % spatial correlation in the prior parameter distributions on/off (=1/0)
+cov_localization    = 0;    % spatial covariance localization in the ES updates on/off (=1/0)
+% define tapering distance (needed if corr_prior_distr = 1) in grid point units    
+c                   = 1;    % tapering distance in both prior correlation and localization in grid point units   
+
 
 % parameter definition and truth run settings:
 % a 'local' parameter can have a different value for each grid cell;
 % a 'global' parameter has one singular value for all grid cells.
 % (option to set P_factor to 'global' not implented yet)
-Dday_factor_type    = 'global';
-
+Dday_factor_type    = 'local';
+ 
 % set truth values 
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 % P_factor value must be positive
-ddf_lit_values      = [6; 10; 8; 9; 7]; % mm/d/K, if snowdepth_obs
+ddf_lit_values      = [6; 8; 10; 9; 7]; % mm/d/K, if snowdepth_obs
 P_lit_values        = [1; 1.75; 1.25; 1; 1.5];
     % degree day factor
 if strcmp(Dday_factor_type, 'global') == 1
@@ -119,17 +126,17 @@ t_obs(:,1)  = [ datenum('01-Jan-2019'),... % obs time first grid point
                 datenum('01-Mar-2019'),...
                 datenum('15-Mar-2019'),...
                 datenum('01-Apr-2019'),...
-                datenum('15-Apr-2019'),...
+                datenum('22-Apr-2019'),...
                 datenum('01-May-2019'),...
                 datenum('15-May-2019'),...
                 datenum('01-Jun-2019'),...
                 datenum('01-Jul-2019'),...
                 datenum('01-Aug-2019'),...
                 ]; 
-t_obs(:,2)  = [ datenum('15-Mar-2019'),... % obs time second grid point
-                datenum('15-May-2019'),...
-                3:Nmaxobs...
-                ];                
+% t_obs(:,2)  = [ datenum('15-Mar-2019'),... % obs time second grid point
+%                 datenum('15-May-2019'),...
+%                 3:Nmaxobs...
+%                 ];                
 t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
                 2:Nmaxobs...
                 ]; 
@@ -147,6 +154,9 @@ t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
 %                 datenum('15-Jun-2019'),...
 %                 datenum('01-Jul-2019'),...
 %                 datenum('01-Aug-2019'),...
+
+
+
             
 %% load climatic forcing
 
@@ -218,6 +228,12 @@ for ii = 1:N_gridp
 end
 No_tot = sum(No,1);       % total number of available observations summed over all grid points
 
+% keep track of observation location, needed for the localization
+loc_obs = nan(size(snowdepth_obs));
+for ii = 1:N_gridp
+    loc_obs(1:No(ii),ii) = ii*ones(No(ii), 1);
+end
+
 
 % % control figure to see synthetic observations:
 % figure(1); clf;
@@ -231,12 +247,12 @@ No_tot = sum(No,1);       % total number of available observations summed over a
 
 %% 3) Set a prior distribution on the uncertain parameters
 
-x=(1:N_gridp)';%% spatial coordinate (dummy units). Column vectors
-d=sqrt((repmat(x,1,N_gridp)-repmat(x',N_gridp,1)).^2);
-c=0.5; 
-rho=GC(d,c);
-sig=ones(N_gridp,1);  % standard dev
-
+if corr_prior_distr == 1
+    x   = (1:N_gridp)'; % spatial coordinate (dummy units). Column vectors
+    d   = sqrt((repmat(x,1,N_gridp)-repmat(x',N_gridp,1)).^2); % distance matrix fot the used grid points   
+    rho = GC(d,c); % Gaspari Cohn function
+    sig = ones(N_gridp,1);  % standard dev
+end
 
 
 
@@ -244,29 +260,38 @@ sig=ones(N_gridp,1);  % standard dev
 
 % degree day factor, global or local
 if strcmp(Dday_factor_type, 'global') == 1
-    % option A: prior distribution uncorrelated between grid points
-    Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
-    Dday_factor_DDMinput = Dday_factor;
-%     % option B: correlation between grid points as prior distributions have the same deviations    
-%     Dday_factor=exp(log(5)+1.*randn(1,Ne));
-%     Dday_factor_DDMinput = repmat(Dday_factor, [N_gridp, 1]);
+    if corr_prior_distr == 0 % option A: prior distribution uncorrelated between grid points
+        Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
+        Dday_factor_DDMinput = Dday_factor;
+    elseif corr_prior_distr == 1 % option B: spatial correlation between grid points using the CGS function
+        Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
+        Dday_factor_DDMinput = Dday_factor;
+    else
+        disp('ERROR: Dday_factor not defined because ''corr_prior_distr'' is not either 1 or 0');
+    end
 elseif strcmp(Dday_factor_type, 'local') == 1
-    % No spatial correlation
-    Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
-    Dday_factor_DDMinput = Dday_factor;
-%     % Possible spatial correlation (change c=cut off distance)
-%     Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
-%     Dday_factor_DDMinput = Dday_factor;
+    if corr_prior_distr == 0 % option A: No spatial correlation
+        Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
+        Dday_factor_DDMinput = Dday_factor;
+    elseif corr_prior_distr == 1 % option B: Possible spatial correlation using the CGS function (change c=cut off distance)
+        Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
+        Dday_factor_DDMinput = Dday_factor;
+    else
+        disp('ERROR: Dday_factor not defined because ''corr_prior_distr'' is not either 1 or 0');
+    end
     
 else
     disp('ERROR: Dday_factor not defined because ''Dday_factor_type'' is either ''local'' nor ''global''')
 end
 
 % precipitation factor
-    % option A: prior distribution uncorrelated between grid points     
-P_factor = exp(log(1)+ 1.* randn(N_gridp,Ne));   
-%     % optionB: spatial correlation between grid points using the CGS function
-% P_factor=exp(CGS(rho,log(1).*ones(N_gridp,1),sig,Ne));
+if corr_prior_distr == 0    % option A: prior distribution uncorrelated between grid points     
+    P_factor = exp(log(1)+ 1.* randn(N_gridp,Ne));   
+elseif corr_prior_distr == 1 % optionB: spatial correlation between grid points using the CGS function
+    P_factor = exp(CGS(rho,log(1).*ones(N_gridp,1),sig,Ne));
+else
+    disp('ERROR: P_factor not defined because ''corr_prior_distr'' is not either 1 or 0');
+end
 
 
 
@@ -312,6 +337,8 @@ for ell=1:(Na+1)
         % define the model predicted observations matrix from the model results
         Yp = zeros(No_tot, Ne);
         tmp2 = snowdepth(obs_times_ens); % time, space, ensemble; tmp lists all model predicted observations for all ensemble members in a [No_tot * Ne,1] array
+        % sort [NoxNe,1] listed model predicted observations in a [No,Ne] matrix 
+        % results in a matrix that lists all pred obs for gridp 1, followed by those for gridp2 etc, in rows with Ne colomns for all ensemble members   
         jj1 = 1;
         for ii=1:Ne
             jj2 = jj1+No_tot-1;
@@ -320,13 +347,36 @@ for ell=1:(Na+1)
         end
         % define the observation matrix
         y=snowdepth_obs(~isnan(snowdepth_obs)); % creates a [Nobs, 1] list of all observation with first all obs for gridp 1, followed by all obs for gridp 2, etc til gridp N_gridp
-        % define observation covariance (measure for observation
-        % uncertainty)
+        % define observation covariance (measure for observation uncertainty)
         R=y_std.^2;
         alpha=Na; % number of MDA iterations
         pert_stat=1; % 1 for MDA, 0 for ES
-        % update parameters with the EnKA function
-        phi=EnKA(phi,Yp,y,R,alpha,pert_stat);
+        
+
+        
+        if  cov_localization == 0
+            % update parameters with the EnKA function
+            phi=EnKA(phi,Yp,y,R,alpha,pert_stat);
+        elseif cov_localization == 1
+            % define location matrix for the predicted observations
+            loc_Yp  = loc_obs(~isnan(snowdepth_obs));
+            % define location matrix for the parameters
+            loc_theta = nan(size(theta,1),1);
+            N_ddf = size(Dday_factor,1);
+            N_Pfac = size(P_factor,1);
+            for ii = 1:N_ddf
+                loc_theta(ii) = ii;
+            end
+            for ii = 1:N_Pfac
+                jj = N_ddf+ii;
+                loc_theta(jj) = ii;
+            end
+            % update parameters with the EnKA_covloc function using covariance localization    
+            phi=EnKA_covloc(phi,Yp,y,R,alpha,pert_stat, loc_Yp, loc_theta,c);
+        else
+            disp('ERROR: ''cov_localization'' is not either 0 or 1, no EnKA parameter updates');
+        end
+            
         % transform parameters back
         theta=exp(phi);
         % update model parameters
