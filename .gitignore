@@ -1,3 +1,11 @@
 # Figures #
 ###################
 *.jpg
+
+# Files #
+*.mat
+*.zip 
+
+# Directories #
+/input
+/tmp
