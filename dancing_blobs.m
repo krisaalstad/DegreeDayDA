@@ -4,7 +4,7 @@
 clearvars;
 
 %% Set up the grid.
-del=0.05; % Grid spacing (don't make it too small, then things blow up!)
+del=0.02; % Grid spacing (don't make it too small, then things blow up!)
 x=-1:del:1; % x coordinates 
 y=x; % y coordinates (make the domain square for simplicity)
 [X,Y]=meshgrid(x,y); % Spatial grid.

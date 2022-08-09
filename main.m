@@ -173,7 +173,20 @@ t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
 %% load climatic forcing
 
 % load real-data forcing
-load('TopoSCALE.mat');   % contains weather data for two grid points 
+%load('TopoSCALE.mat');   % contains weather data for two grid points 
+% Fetch the input data if you haven't yet.
+if ~exist('input','dir')
+    disp('Fetching input data');
+    urlis='https://www.dropbox.com/s/hi7ky0y0jeh2ob7/input.zip?dl=1';
+    %'https://www.dropbox.com/s/9qckrp6tp7v6a81/input.zip?dl=1'; % Changed dl=0 to dl=1
+    tarf='input.zip';
+    websave(tarf,urlis);
+    unzip(tarf,''); % Unzip
+    paths; % Update path
+end
+load('input/TopoSCALE.mat');
+
+
 f.P=double(f.P).*f.P_sf; % unpack precipitation data
 f.T=double(f.T).*f.T_sf; % unpack temperature data
 
