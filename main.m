@@ -68,40 +68,48 @@
 % --DONE
 
 % make more than 2 grid points possible
+% --DONE
 
-%% start code
+% include spatial correlation in the priors
+% and inlcude covariance localization
+% -- DONE
+
+
+%% set model parameters
 
 clearvars;
-
-% set parameters
-
-% Data assimilation parameters
-Ne          = 100; % ensemble size 
-Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
 
 % model run 
 t_start     = '01-Sep-2018';
 t_end       = '01-Sep-2019';
-N_gridp     = 4; % min 2, max 5 grid points, add literature values to ddf and P_factor in case more than 5 points are wanted
+N_gridp     = 4; % min 2, max 6 grid points, add literature values to ddf and P_factor in case more than 6 points are wanted
+save_figure = 0; % set save results figure: 0 or 1
+fig_path    = pwd; % or define path for saved figs, e.g. '~/Documents/presentaties/workmeeting/2022-05-03_snowdepth-kickoff';
 
-% set ES_MDA options
-corr_prior_distr    = 0;    % spatial correlation in the prior parameter distributions on/off (=1/0)
-cov_localization    = 0;    % spatial covariance localization in the ES updates on/off (=1/0)
-% define tapering distance (needed if corr_prior_distr = 1) in grid point units    
-c                   = 1;    % tapering distance in both prior correlation and localization in grid point units   
+% Data assimilation (ES MDA) parameters
+Ne          = 100; % ensemble size 
+Na          = 4;   % number of MDA iterations, Na=1 corresponds to ES
+% rng(1234)        % prescribe SEED of the random number generator. needed if you want to
+                   % compare experimental setups with the same pick from Gaussian distribution.
 
+% set localization options
+corr_prior_distr    = 1;    % spatial correlation in the prior parameter distributions on/off (=1/0)
+cov_localization    = 1;    % spatial covariance localization in the ES updates on/off (=1/0)
+% define tapering distance in grid point units    
+c_priorcorr         = 2;    % tapering distance in prior correlation and localization    
+c_covloc            = 2;    % tapering distance in covariance localization 
 
 % parameter definition and truth run settings:
 % a 'local' parameter can have a different value for each grid cell;
 % a 'global' parameter has one singular value for all grid cells.
 % (option to set P_factor to 'global' not implented yet)
-Dday_factor_type    = 'local';
+Dday_factor_type    = 'local'; % 'local' or 'global'
  
 % set truth values 
 % literature value for the ddf for snow 2.5 to 11.6 mm/d/K
 % P_factor value must be positive
-ddf_lit_values      = [6; 8; 10; 9; 7]; % mm/d/K, if snowdepth_obs
-P_lit_values        = [1; 1.75; 1.25; 1; 1.5];
+ddf_lit_values      = [6;    9;   10;  9.5;   7; 6.4]; % mm/d/K, if snowdepth_obs
+P_lit_values        = [1; 1.25; 1.55; 1.75; 1.5; 1.3];
     % degree day factor
 if strcmp(Dday_factor_type, 'global') == 1
     Dday_factor_true = ddf_lit_values(1);
@@ -115,7 +123,7 @@ P_factor_true = P_lit_values(1:N_gridp);
 
 
 %  synthetic observations
-y_std         = 20; % standard deviation of the error term added to the synthetic SWE observations
+y_std         = 20; % standard deviation of the error term added to the synthetic SWE observations, (default = 20)
 
 % define the time of the observations for each grid point.
 % fill up entries in t_obs with small numbers <= Nmaxobs
@@ -133,13 +141,17 @@ t_obs(:,1)  = [ datenum('01-Jan-2019'),... % obs time first grid point
                 datenum('01-Jul-2019'),...
                 datenum('01-Aug-2019'),...
                 ]; 
-% t_obs(:,2)  = [ datenum('15-Mar-2019'),... % obs time second grid point
-%                 datenum('15-May-2019'),...
-%                 3:Nmaxobs...
-%                 ];                
+t_obs(:,2)  = [ datenum('15-Mar-2019'),... % obs time second grid point
+                datenum('01-Apr-2019'),...                
+                datenum('15-May-2019'),...
+                4:Nmaxobs...
+                ];                
 t_obs(:,3)  = [ datenum('01-Apr-2019'),... % obs time third grid point
                 2:Nmaxobs...
                 ]; 
+% t_obs(:,4)  = [ datenum('10-May-2019'),... % obs time fourth grid point
+%                 2:Nmaxobs...
+%                 ];           
             
 % example dates, can be copied in above:
 %                 datenum('01-Jan-2019'),... % obs time second grid point
@@ -247,33 +259,26 @@ end
 
 %% 3) Set a prior distribution on the uncertain parameters
 
+% set parameters spatially correlated prior distribution function CGS,
+% based on distance between grid points and cut of length c_priorcorr
 if corr_prior_distr == 1
     x   = (1:N_gridp)'; % spatial coordinate (dummy units). Column vectors
     d   = sqrt((repmat(x,1,N_gridp)-repmat(x',N_gridp,1)).^2); % distance matrix fot the used grid points   
-    rho = GC(d,c); % Gaspari Cohn function
+    rho = GC(d,c_priorcorr); % Gaspari Cohn function
     sig = ones(N_gridp,1);  % standard dev
 end
 
-
-
-
-
-% degree day factor, global or local
+% degree day factor, global 
 if strcmp(Dday_factor_type, 'global') == 1
-    if corr_prior_distr == 0 % option A: prior distribution uncorrelated between grid points
-        Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
-        Dday_factor_DDMinput = Dday_factor;
-    elseif corr_prior_distr == 1 % option B: spatial correlation between grid points using the CGS function
-        Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
-        Dday_factor_DDMinput = Dday_factor;
-    else
-        disp('ERROR: Dday_factor not defined because ''corr_prior_distr'' is not either 1 or 0');
-    end
+    Dday_factor=exp(log(5)+1.*randn(1,Ne));
+    Dday_factor_DDMinput = repmat(Dday_factor, N_gridp, 1);
+
+% degree day factor, local    
 elseif strcmp(Dday_factor_type, 'local') == 1
     if corr_prior_distr == 0 % option A: No spatial correlation
         Dday_factor=exp(log(5)+1.*randn(N_gridp,Ne));
         Dday_factor_DDMinput = Dday_factor;
-    elseif corr_prior_distr == 1 % option B: Possible spatial correlation using the CGS function (change c=cut off distance)
+    elseif corr_prior_distr == 1 % option B: Possible spatial correlation using the CGS function (change c = cut off distance)
         Dday_factor=exp(CGS(rho,log(5).*ones(N_gridp,1),sig,Ne));
         Dday_factor_DDMinput = Dday_factor;
     else
@@ -372,7 +377,7 @@ for ell=1:(Na+1)
                 loc_theta(jj) = ii;
             end
             % update parameters with the EnKA_covloc function using covariance localization    
-            phi=EnKA_covloc(phi,Yp,y,R,alpha,pert_stat, loc_Yp, loc_theta,c);
+            phi=EnKA_covloc(phi,Yp,y,R,alpha,pert_stat, loc_Yp, loc_theta, c_covloc);
         else
             disp('ERROR: ''cov_localization'' is not either 0 or 1, no EnKA parameter updates');
         end
@@ -396,7 +401,9 @@ end
 
 %% 5) Perform some validation
 
-figure(1); clf;
+fig1 = figure(1); 
+clf;
+set(fig1, 'position', [75 25 1850 1000])
 for loc=1:N_gridp
     subplot(2,N_gridp,loc);
     plot(t,squeeze(snowdepth_pri(:,loc,:)),'LineWidth',0.5,'Color',[0.8 0 0 0.1]); hold on;
@@ -454,21 +461,23 @@ for loc=1:N_gridp
     axis square;
     title(sprintf('Parameters in location %d',loc),'Interpreter','Latex','FontSize',16);
 end
-% save figure
-% print('-djpeg','results','-r300','-opengl');
 
+if save_figure == 1
+    % save figure
+    print('-djpeg',[fig_path, '/results'],'-r300','-opengl');
+end
 
 %% plot histogram P_factor prior and posterior last grid point
-bar_matrix = [ypri; ypost]';
-f2 = figure(2);
-clf
-H = hist(bar_matrix,[0.25:0.25:5]);
-hist(bar_matrix,[0.25:0.25:5]);
-hold on;
-plot([ytrue(end), ytrue(end)], [0,max(max(H))], 'linewidth', 3, 'color', [0,0,0])
-xlim(gca,[0,5]);
-l1 = legend('prior', 'posterior', 'truth');
-title('P factor distribution last grid point')
+% bar_matrix = [ypri; ypost]';
+% f2 = figure(2);
+% clf
+% H = hist(bar_matrix,[0.25:0.25:5]);
+% hist(bar_matrix,[0.25:0.25:5]);
+% hold on;
+% plot([ytrue(end), ytrue(end)], [0,max(max(H))], 'linewidth', 3, 'color', [0,0,0])
+% xlim(gca,[0,5]);
+% l1 = legend('prior', 'posterior', 'truth');
+% title('P factor distribution last grid point')
 
 
 
